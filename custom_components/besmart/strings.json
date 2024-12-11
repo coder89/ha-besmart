@@ -1,0 +1,37 @@
+{
+    "title": "BeSMART Thermostat",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Create BeSMART integration",
+                "description": "Create a BeSMART integration by authenticating with BeSMART service.",
+                "data": {
+                    "name": "Name",
+                    "username": "Username",
+                    "password": "Password"
+                },
+                "data_description": {
+                    "name": "Name of the integration.",
+                    "username": "Provide username for the BeSMART account.",
+                    "password": "Provide password for the BeSMART account."
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "name": "[%key:component::besmart::config::step::user::data::name%]",
+                    "username": "[%key:component::besmart::config::step::user::data::username%]",
+                    "password": "[%key:component::besmart::config::step::user::data::password%]"
+                },
+                "data_description": {
+                    "name": "[%key:component::besmart::config::step::user::data_description::name%]",
+                    "username": "[%key:component::besmart::config::step::user::data_description::username%]",
+                    "password": "[%key:component::besmart::config::step::user::data_description::password%]"
+                }
+            }
+        }
+    }
+}
