@@ -90,9 +90,16 @@ SUPPORT_FLAGS = (
     SUPPORT_PRESET_MODE | SUPPORT_TARGET_TEMPERATURE_RANGE | SUPPORT_TARGET_TEMPERATURE
 )
 
+def create_device(room, client) -> Thermostat:
+    entry_name = config.get(CONF_NAME)
+    room_name = room.get("name")
+    device_name = "{} {}".format(entry_name, room_name)
+    return Thermostat(device_name, room_name, client)
+
 async def _async_setup_devices(client: BesmartClient) -> None:
-    rooms = await hass.async_add_executor_job(client.rooms)  # force init
-    # add_devices([Thermostat(config.get(CONF_NAME), config.get(CONF_ROOM), client)])
+    rooms = await hass.async_add_executor_job(client.rooms)
+    devices = map(create_device, rooms)
+    add_devices(devices)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -128,6 +135,9 @@ class Thermostat(ClimateEntity):
     PARTY = 3  # 'Party - Confort'
     IDLE = 4  # 'Spento - Antigelo'
     DHW = 5 # 'Sanitario - Domestic hot water only'
+
+    CLIMATE_TEMP_MAX = 35.0
+    CLIMATE_TEMP_STEP = 0.2
 
     PRESET_HA_TO_BESMART = {
         "AUTO": AUTO,
@@ -173,13 +183,77 @@ class Thermostat(ClimateEntity):
         self.update()
 
     @property
+    def current_temperature(self):
+        """Return the current temperature."""
+        return self._current_temp
+
+    @property
+    def hvac_action(self):
+        """Current mode."""
+        if self._heating_state:
+            mode = self.hvac_mode
+            if mode == HVAC_MODE_HEAT:
+                return CURRENT_HVAC_HEAT
+            else:
+                return CURRENT_HVAC_COOL
+        else:
+            return CURRENT_HVAC_OFF
+
+    @property
+    def hvac_mode(self):
+        """Current mode."""
+        return self.HVAC_MODE_BESMART_TO_HA.get(self._season)
+
+    def set_hvac_mode(self, hvac_mode):
+        """Set HVAC mode (COOL, HEAT)."""
+        mode = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
+        # self._cl.setSettings(self._room_name, mode)
+        _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
+
+    @property
+    def hvac_modes(self):
+        """List of available operation modes."""
+        return self.HVAC_MODE_LIST
+
+    @property
+    def max_temp(self):
+        """TODO The maximum temperature."""
+        return 69.0
+
+    @property
+    def min_temp(self):
+        """TODO The minimum temperature."""
+        return 5.1
+
+    @property
+    def precision(self):
+        """TODO The temperature precision (defaults to 0.1deg C)."""
+        return 0.1
+
+    @property
+    def preset_mode(self):
+        """List of supported preset (comfort, home, sleep, Party, Off)."""
+        return self.PRESET_BESMART_TO_HA.get(self._current_state, "IDLE")
+
+    @property
+    def preset_modes(self):
+        """List of supported preset (comfort, home, sleep, Party, Off)."""
+        return self.PRESET_MODE_LIST
+
+    def set_preset_mode(self, preset_mode):
+        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
+        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
+        # self._cl.setRoomMode(self._room_name, mode)
+        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
+
+    @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
         return self._comfT
 
     @property
     def target_temperature_high(self):
-        return self._comfT
+        return self.CLIMATE_TEMP_MAX
 
     @property
     def target_temperature_low(self):
@@ -188,18 +262,47 @@ class Thermostat(ClimateEntity):
     @property
     def target_temperature_step(self):
         """Return the supported step of target temperature."""
-        return 0.2
+        return self.CLIMATE_TEMP_STEP
+
+    @property
+    def temperature_unit(self):
+        """Return the unit of measurement."""
+        if self._current_unit == "0":
+            return TEMP_CELSIUS
+        else:
+            return TEMP_FAHRENHEIT
+
+    def set_temperature(self, **kwargs):
+        """Set new target temperature."""
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        target_temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
+        target_temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
+
+        _LOGGER.warn(
+            "temperature Frost: {} Eco: {} Conf: {}".format(
+                temperature, target_temp_low, target_temp_high
+            )
+        )
+        _LOGGER.warn(dir(kwargs))
+
+        # if temperature:
+            # self._cl.setRoomConfortTemp(self._room_name, temperature)
+            # self._cl.setRoomFrostTemp(self._room_name, temperature)
+        # if target_temp_high:
+            # self._cl.setRoomConfortTemp(self._room_name, target_temp_high)
+        # if target_temp_low:
+            # self._cl.setRoomECOTemp(self._room_name, target_temp_low)
+
+    @property
+    def supported_features(self):
+        """Return the list of supported features."""
+        return SUPPORT_FLAGS
 
     @property
     def should_poll(self):
         """Polling needed for thermostat."""
         _LOGGER.debug("Should_Poll called")
         return True
-
-    @property
-    def supported_features(self):
-        """Return the list of supported features."""
-        return SUPPORT_FLAGS
 
     def update(self):
         """Update the data from the thermostat."""
@@ -264,89 +367,34 @@ class Thermostat(ClimateEntity):
         """Return the device specific state attributes."""
         return {
             ATTR_MODE: self._current_state,
-            "battery_state": self._battery,
-            "frost_t": self._frostT,
-            "confort_t": self._comfT,
-            "save_t": self._saveT,
-            "season_mode": self.hvac_mode,
-            "heating_state": self._heating_state,
+            # "battery_state": self._battery,
+            # "frost_t": self._frostT,
+            # "confort_t": self._comfT,
+            # "save_t": self._saveT,
+            # "season_mode": self.hvac_mode,
+            # "heating_state": self._heating_state,
         }
 
-    @property
-    def temperature_unit(self):
-        """Return the unit of measurement."""
-        if self._current_unit == "0":
-            return TEMP_CELSIUS
-        else:
-            return TEMP_FAHRENHEIT
+#class Boiler(WaterHeater):
+#    def __init__():
+
+    
+
+    # min_temp	float	110°F	The minimum temperature that can be set.
+    # max_temp	float	140°F	The maximum temperature that can be set.
+    # current_temperature	float	None	The current temperature.
+    # target_temperature	float	None	The temperature we are trying to reach.
+    # target_temperature_high	float	None	Upper bound of the temperature we are trying to reach.
+    # target_temperature_low	float	None	Lower bound of the temperature we are trying to reach.
+    # temperature_unit	str	NotImplementedError	One of TEMP_CELSIUS, TEMP_FAHRENHEIT, or TEMP_KELVIN.
+    # current_operation	string	None	The current operation mode.
+    # operation_list	List[str]	None	List of possible operation modes.
+    # supported_features	List[str]	NotImplementedError	List of supported features.
+    # is_away_mode_on	bool	None	The current status of away mode.
 
     @property
-    def current_temperature(self):
-        """Return the current temperature."""
-        return self._current_temp
-
-    @property
-    def hvac_mode(self):
-        """Current mode."""
-        return self.HVAC_MODE_BESMART_TO_HA.get(self._season)
-
-    @property
-    def hvac_action(self):
-        """Current mode."""
-        if self._heating_state:
-            mode = self.hvac_mode
-            if mode == HVAC_MODE_HEAT:
-                return CURRENT_HVAC_HEAT
-            else:
-                return CURRENT_HVAC_COOL
-        else:
-            return CURRENT_HVAC_OFF
-
-    @property
-    def hvac_modes(self):
-        """List of available operation modes."""
-        return self.HVAC_MODE_LIST
-
-    def set_hvac_mode(self, hvac_mode):
-        """Set HVAC mode (COOL, HEAT)."""
-        mode = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
-        self._cl.setSettings(self._room_name, mode)
-        _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
-
-    @property
-    def preset_mode(self):
-        """List of supported preset (comfort, home, sleep, Party, Off)."""
-
-        return self.PRESET_BESMART_TO_HA.get(self._current_state, "IDLE")
-
-    @property
-    def preset_modes(self):
-        """List of supported preset (comfort, home, sleep, Party, Off)."""
-
-        return self.PRESET_MODE_LIST
-
-    def set_preset_mode(self, preset_mode):
-        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
-
-        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
-        self._cl.setRoomMode(self._room_name, mode)
-        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
-
-    def set_temperature(self, **kwargs):
-        """Set new target temperature."""
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        target_temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
-        target_temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
-
-        _LOGGER.debug(
-            "temperature Frost: {} Eco: {} Conf: {}".format(
-                temperature, target_temp_low, target_temp_high
-            )
-        )
-        if temperature:
-            self._cl.setRoomConfortTemp(self._room_name, temperature)
-            # self._cl.setRoomFrostTemp(self._room_name, temperature)
-        if target_temp_high:
-            self._cl.setRoomConfortTemp(self._room_name, target_temp_high)
-        if target_temp_low:
-            self._cl.setRoomECOTemp(self._room_name, target_temp_low)
+    def should_poll(self):
+        """Polling needed for thermostat."""
+        _LOGGER.debug("Should_Poll called")
+        return True
+    

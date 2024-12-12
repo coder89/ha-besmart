@@ -15,7 +15,7 @@ class BesmartClient(object):
     ROOM_MODE = "setRoomMode.php"
     ROOM_LIST = "getRoomList.php?deviceId={0}"
     ROOM_DATA = "getRoomData196.php?therId={0}&deviceId={1}"
-    ROOM_PROGRAM = "getProgram.php?roomId={0}"
+    ROOM_PROGRAM = "getProgram196.php?therId={0}&deviceId={1}"
     ROOM_TEMP = "setRoomTemp.php"
     ROOM_ECON_TEMP = "setEconTemp.php"
     ROOM_FROST_TEMP = "setFrostTemp.php"
@@ -74,7 +74,7 @@ class BesmartClient(object):
                 self.login()
 
             if self._device:
-                resp = self._s.post(
+                resp = self._s.get(
                     self.BASE_URL + self.ROOM_LIST.format(self._device.get("deviceId")),
                     timeout=self._timeout,
                 )
@@ -126,7 +126,9 @@ class BesmartClient(object):
             self.login()
 
             resp = self._s.get(
-                self.BASE_URL + self.ROOM_PROGRAM.format(room.get("id")),
+                self.BASE_URL + self.ROOM_PROGRAM.format(
+                    room.get("therId"), self._device.get("deviceId")
+                ),
                 timeout=self._timeout,
             )
             if resp.ok:
