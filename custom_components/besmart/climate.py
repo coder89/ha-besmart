@@ -24,7 +24,7 @@ logging options:
 logger:
   default: info
   logs:
-    custom_components.climate.besmart: debug
+    custom_components.climate.besmart_thermostat: debug
 """
 import logging
 from datetime import datetime

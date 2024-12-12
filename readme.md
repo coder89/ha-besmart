@@ -13,7 +13,7 @@ Configuration example:
 
 ```yaml
 climate:
-  - platform: besmart
+  - platform: besmart_thermostat
     name: Besmart Thermostat
     username: <my-username>
     password: <my-password>
@@ -25,7 +25,7 @@ logging options:
 logger:
   default: info
   logs:
-    custom_components.climate.besmart: debug
+    custom_components.climate.besmart_thermostat: debug
 ```
 
 ## Contribute
