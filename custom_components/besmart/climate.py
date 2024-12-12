@@ -31,6 +31,8 @@ from datetime import datetime
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.climate import (
     ATTR_TARGET_TEMP_LOW,
     PLATFORM_SCHEMA,
@@ -51,11 +53,13 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_NAME,
     CONF_PASSWORD,
-    # CONF_ROOM,
     CONF_USERNAME,
     TEMP_CELSIUS,
     TEMP_FAHRENHEIT,
 )
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import (
     DEFAULT_NAME,
@@ -79,7 +83,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Required(CONF_USERNAME): cv.string,
         vol.Required(CONF_PASSWORD): cv.string,
-        # vol.Required(CONF_ROOM): cv.string,
     }
 )
 
@@ -87,26 +90,29 @@ SUPPORT_FLAGS = (
     SUPPORT_PRESET_MODE | SUPPORT_TARGET_TEMPERATURE_RANGE | SUPPORT_TARGET_TEMPERATURE
 )
 
-def setup_entry(
+async def _async_setup_devices(client: BesmartClient) -> None:
+    rooms = await hass.async_add_executor_job(client.rooms)  # force init
+    # add_devices([Thermostat(config.get(CONF_NAME), config.get(CONF_ROOM), client)])
+
+async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    _LOGGER.warn("setup_entry")
-    _LOGGER.warn(config)
-    client = BesmartClient(config.get(CONF_USERNAME), config.get(CONF_PASSWORD))
-    # client.rooms()  # force init
-    # add_devices([Thermostat(config.get(CONF_NAME), config.get(CONF_ROOM), client)])
+    client = config_entry.runtime_data
+    await _async_setup_devices(client)
 
 
 # pylint: disable=unused-argument
-def setup_platform(hass, config, add_devices, discovery_info=None):
+async def async_setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    async_add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+):
     """Setup the Besmart thermostats."""
-    _LOGGER.warn("setup_platform")
-    _LOGGER.warn(config)
     client = BesmartClient(config.get(CONF_USERNAME), config.get(CONF_PASSWORD))
-    # client.rooms()  # force init
-    # add_devices([Thermostat(config.get(CONF_NAME), config.get(CONF_ROOM), client)])
+    await _async_setup_devices(client)
 
 
 # pylint: disable=abstract-method

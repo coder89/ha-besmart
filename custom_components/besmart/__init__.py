@@ -6,12 +6,13 @@ from http import HTTPStatus
 from requests import HTTPError
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import (
+    Platform,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.device import (
-    async_remove_stale_devices_links_keep_entity_device,
-)
 
 from .const import PLATFORMS
 from .utils import BesmartClient
@@ -23,14 +24,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: BesmartConfigEntry) -> b
     """Set up besmart_thermostat from a config entry."""
 
     # 1. Create API instance
-    besmart_config = entry.data
+    besmart_config = entry.options
     client = BesmartClient(besmart_config[CONF_USERNAME], besmart_config[CONF_PASSWORD])
 
     # 2. Validate the API connection (and authentication)
     try:
-        await client.login()
+        await hass.async_add_executor_job(client.login)
     except HTTPError as ex:
-        if ex.code == HTTPStatus.UNAUTHORIZED
+        if ex.response.status_code == HTTPStatus.UNAUTHORIZED:
             raise ConfigEntryAuthFailed("Invalid credentials.") from ex
         raise ConfigEntryNotReady from ex
     except Exception as ex:
@@ -39,13 +40,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: BesmartConfigEntry) -> b
     # 3. Store an API object for your platforms to access
     entry.runtime_data = client
 
-    # async_remove_stale_devices_links_keep_entity_device(
-    #     hass,
-    #     entry.entry_id,
-    #     entry.options[CONF_HEATER],
-    # )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
+    entry.async_on_unload(entry.add_update_listener(async_config_entry_update_listener))
 
     return True
 

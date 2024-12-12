@@ -41,27 +41,28 @@ class BesmartClient(object):
 
     def login(self):
         try:
-            resp = self._s.post(
-                self.BASE_URL + self.LOGIN,
-                data={"un": self._username, "pwd": self._password, "version": "32"},
-                timeout=self._timeout,
-            )
+            url = self.BASE_URL + self.LOGIN
+            reqData = {"un": self._username, "pwd": self._password, "version": "32"}
+            res = self._s.post(url, data=reqData, timeout=self._timeout)
 
-            if not resp.ok:
-                resp.raise_for_status()
+            if not res.ok:
+                res.raise_for_status()
 
-            data = resp.json()
+            resData = res.json()
+            error = resData.get("error")
 
-            if data.error == "1"
-                raise requests.HTTPError(code=HTTPStatus.UNAUTHORIZED, reason="Invalid credentials")
+            if error == "1":
+                res.status_code = HTTPStatus.UNAUTHORIZED
+                raise requests.HTTPError("Invalid credentials", response=res)
 
-            if data.error == "2"
-                raise requests.HTTPError(code=HTTPStatus.BAD_REQUEST, reason="Bad request")
+            if error == "2":
+                res.status_code = HTTPStatus.BAD_REQUEST
+                raise requests.HTTPError("Bad request", response=res)
 
-            if not data.error == "0"
+            if not error == "0":
                 raise Exception("Unexpected error occured during auth process.")
             
-            self._device = resp.json()
+            self._device = resData
         except Exception as ex:
             _LOGGER.warning(ex)
             self._device = None
