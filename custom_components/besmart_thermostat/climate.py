@@ -17,21 +17,14 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.components.climate import (
-    ATTR_TARGET_TEMP_LOW,
-    PLATFORM_SCHEMA,
-    ClimateEntity,
-)
+from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
+    ATTR_TARGET_TEMP_LOW,
     ATTR_TARGET_TEMP_HIGH,
-    CURRENT_HVAC_COOL,
-    CURRENT_HVAC_HEAT,
-    CURRENT_HVAC_OFF,
-    HVAC_MODE_COOL,
-    HVAC_MODE_HEAT,
-    SUPPORT_PRESET_MODE,
-    SUPPORT_TARGET_TEMPERATURE,
-    SUPPORT_TARGET_TEMPERATURE_RANGE,
+    DOMAIN as PLATFORM_DOMAIN,
+    HVACAction,
+    HVACMode,
+    ClimateEntityFeature,
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -39,11 +32,11 @@ from homeassistant.const import (
     CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
-    TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
+    UnitOfTemperature,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import async_generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
@@ -55,13 +48,17 @@ _LOGGER = logging.getLogger(__name__)
 DEPENDENCIES = ["switch", "sensor"]
 REQUIREMENTS = ["requests"]
 
+DEFAULT_NAME = "BeSMART Thermostat"
 DEFAULT_TIMEOUT = 3
+ENTITY_ID_FORMAT = PLATFORM_DOMAIN + ".{}"
 
 ATTR_MODE = "mode"
 STATE_UNKNOWN = "unknown"
 
 SUPPORT_FLAGS = (
-    SUPPORT_PRESET_MODE | SUPPORT_TARGET_TEMPERATURE_RANGE | SUPPORT_TARGET_TEMPERATURE
+    ClimateEntityFeature.TARGET_TEMPERATURE | 
+    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE | 
+    ClimateEntityFeature.PRESET_MODE
 )
 
 
@@ -74,21 +71,22 @@ async def async_setup_entry(
     besmart_config = config_entry.options
     entry_id = config_entry.entry_id
     entry_name = besmart_config[CONF_NAME]
+    device = entry.interface_device.device_info
 
     rooms = await hass.async_add_executor_job(client.rooms)
 
-    new_devices = []
+    new_entities = []
     for roomKey in rooms:
         roomData = rooms[roomKey]
         room_id = roomData.get("therId")
         room_name = roomData.get("name")
-        new_devices.append(Thermostat(entry_id, entry_name, room_id, room_name, client))
+        new_entities.append(Thermostat(hass, device, entry_id, entry_name, room_id, room_name, client))
 
-    for new_device in new_devices:
-        await hass.async_add_executor_job(new_device.update)
+    for new_entity in new_entities:
+        await hass.async_add_executor_job(new_entity.update)
 
-    if new_devices:
-        async_add_entities(new_devices) #, update_before_add=True)
+    if new_entities:
+        async_add_entities(new_entities) #, update_before_add=True)
 
 
 async def async_remove_entry(hass, entry) -> None:
@@ -100,6 +98,12 @@ async def async_remove_entry(hass, entry) -> None:
 # pylint: disable=too-many-instance-attributes
 class Thermostat(ClimateEntity):
     """Representation of a Besmart thermostat."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _default_name = "Thermostat"
+    _entity_id_format = ENTITY_ID_FORMAT
+    _attr_unique_id: str
 
     # BeSmart thModel = 5
     # BeSmart WorkMode
@@ -132,16 +136,16 @@ class Thermostat(ClimateEntity):
     }
     PRESET_MODE_LIST = list(PRESET_HA_TO_BESMART)
 
-    HVAC_MODE_LIST = (HVAC_MODE_COOL, HVAC_MODE_HEAT)
-    HVAC_MODE_BESMART_TO_HA = {"1": HVAC_MODE_HEAT, "0": HVAC_MODE_COOL}
+    HVAC_MODE_LIST = (HVACMode.COOL, HVACMode.HEAT)
+    HVAC_MODE_BESMART_TO_HA = {"1": HVACMode.HEAT, "0": HVACMode.COOL}
 
     # BeSmart Season
-    HVAC_MODE_HA_BESMART = {HVAC_MODE_HEAT: "1", HVAC_MODE_COOL: "0"}
+    HVAC_MODE_HA_BESMART = {HVACMode.HEAT: "1", HVACMode.COOL: "0"}
 
-    def __init__(self, device_id, name, room_id, room_name, client):
+    def __init__(self, hass, device, entry_id, entry_name, room_id, room_name, client):
         """Initialize the thermostat."""
-        self._device_id = device_id
-        self._name = name
+        self._entry_name = entry_name
+        self._entry_id = entry_id
         self._room_id = room_id
         self._room_name = room_name
         self._cl = client
@@ -157,29 +161,34 @@ class Thermostat(ClimateEntity):
         self._comfT = 0
         self._season = "1"
 
-        # As per the sensor, this must be a unique value within this domain. This is done
-        # by using the device ID, and appending "_battery"
-        self._attr_unique_id = f"{self._device_id}:{self._room_id}"
+        # link to BeSMART device
+        self._attr_device_info = device
 
-        # The name of the entity
-        self._attr_name = f"{self._name} Thermostat [{self._room_name}]"
+        # unique_id = <deviceID>:<roomID>
+        self._attr_unique_id = f"{self._entry_id}:{self._room_id}"
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={
-                (DOMAIN, self._attr_unique_id)
-            },
-            name=f"{self._name} Thermostat [{self._room_name}]",
-            manufacturer="Riello S.p.A.",
-            model="BeSMART Thermostat",
-            model_id="BeSMART Thermostat",
-            serial_number=self._room_id,
-            suggested_area=self._room_name,
-            sw_version="1.0",
-            # via_device=(DOMAIN, self.api.bridgeid),
-        )
+        # name = <integrationName> Thermostat [<roomName>]
+        self._attr_name = f"{self._room_name} Thermostat"
+
+        # entity_id = climate.<name>
+        self._entity_id = async_generate_entity_id(self._entity_id_format, self._attr_name or self._default_name, None, hass)
+
+    # @property
+    # def device_info(self) -> DeviceInfo:
+    #     """Return the device info."""
+    #     return DeviceInfo(
+    #         identifiers={
+    #             (DOMAIN, self._attr_unique_id)
+    #         },
+    #         name=self._entry_name,
+    #         manufacturer="Riello S.p.A.",
+    #         model="BeSMART Thermostat",
+    #         model_id="BeSMART Thermostat",
+    #         serial_number=self._room_id,
+    #         suggested_area=self._room_name,
+    #         sw_version="1.0",
+    #         # via_device=(DOMAIN, self.api.bridgeid),
+    #     )
 
     @property
     def current_temperature(self):
@@ -191,12 +200,12 @@ class Thermostat(ClimateEntity):
         """Current mode."""
         if self._heating_state:
             mode = self.hvac_mode
-            if mode == HVAC_MODE_HEAT:
-                return CURRENT_HVAC_HEAT
+            if mode == HVACMode.HEAT:
+                return HVACAction.HEATING
             else:
-                return CURRENT_HVAC_COOL
+                return HVACAction.COOLING
         else:
-            return CURRENT_HVAC_OFF
+            return HVACAction.OFF
 
     @property
     def hvac_mode(self):
@@ -267,9 +276,9 @@ class Thermostat(ClimateEntity):
     def temperature_unit(self):
         """Return the unit of measurement."""
         if self._current_unit == "0":
-            return TEMP_CELSIUS
+            return UnitOfTemperature.CELSIUS
         else:
-            return TEMP_FAHRENHEIT
+            return UnitOfTemperature.FAHRENHEIT
 
     def set_temperature(self, **kwargs):
         """Set new target temperature."""
@@ -296,12 +305,6 @@ class Thermostat(ClimateEntity):
     def supported_features(self):
         """Return the list of supported features."""
         return SUPPORT_FLAGS
-
-    @property
-    def should_poll(self):
-        """Polling needed for thermostat."""
-        _LOGGER.debug("Should_Poll called")
-        return True
 
     def update(self):
         """Update the data from the thermostat."""
@@ -357,11 +360,6 @@ class Thermostat(ClimateEntity):
             self._season = data.get("season")
 
     @property
-    def name(self):
-        """Return the name of the thermostat."""
-        return self._name
-
-    @property
     def extra_state_attributes(self):
         """Return the device specific state attributes."""
         return {
@@ -391,9 +389,9 @@ class Thermostat(ClimateEntity):
     # supported_features	List[str]	NotImplementedError	List of supported features.
     # is_away_mode_on	bool	None	The current status of away mode.
 
-    @property
-    def should_poll(self):
-        """Polling needed for thermostat."""
-        _LOGGER.debug("Should_Poll called")
-        return True
+    # @property
+    # def should_poll(self):
+    #     """Polling needed for thermostat."""
+    #     _LOGGER.debug("Should_Poll called")
+    #     return True
     

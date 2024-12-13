@@ -17,6 +17,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import PLATFORMS
+from .device import BesmartInterfaceDevice
 from .utils import BesmartClient
 
 type BesmartConfigEntry = ConfigEntry[BesmartClient]
@@ -47,6 +48,9 @@ async def async_setup_entry(
 
     # 3. Store an API object for your platforms to access
     entry.runtime_data = client
+
+    # 4. Register BeSMART Controller device
+    entry.interface_device = BesmartInterfaceDevice(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_config_entry_update_listener))
