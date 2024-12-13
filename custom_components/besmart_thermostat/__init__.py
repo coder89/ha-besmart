@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from http import HTTPStatus
 from requests import HTTPError
 
@@ -13,15 +14,22 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import PLATFORMS
 from .utils import BesmartClient
 
 type BesmartConfigEntry = ConfigEntry[BesmartClient]
 
+_LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: BesmartConfigEntry) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: BesmartConfigEntry,
+) -> bool:
     """Set up besmart_thermostat from a config entry."""
+
+    _LOGGER.warn("__init__.async_setup_entry")
 
     # 1. Create API instance
     besmart_config = entry.options
@@ -46,11 +54,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: BesmartConfigEntry) -> b
     return True
 
 
-async def async_config_entry_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_config_entry_update_listener(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
     """Update listener, called when the config entry options are changed."""
+    _LOGGER.warn("__init__.async_config_entry_update_listener")
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: BesmartConfigEntry) -> bool:
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    device_entry: DeviceEntry,
+) -> bool:
+    """Remove a config entry from a device."""
+    _LOGGER.warn("__init__.async_remove_config_entry_device")
+    return True
+
+
+async def async_unload_entry(
+    hass: HomeAssistant,
+    entry: BesmartConfigEntry,
+) -> bool:
     """Unload a config entry."""
+    _LOGGER.warn("__init__.async_unload_entry")
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

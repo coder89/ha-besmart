@@ -80,9 +80,10 @@ class BesmartClient(object):
                 )
                 if resp.ok:
                     self._lastupdate = datetime.now()
+                    data = resp.json()
                     self._rooms = dict(
                         (y.get("name").lower(), y)
-                        for y in filter(lambda x: x.get("id") != None, resp.json())
+                        for y in filter(lambda x: x.get("id") != None and x.get("error") == 0, data)
                     )
                     _LOGGER.debug("rooms: {}".format(self._rooms))
                     if len(self._rooms) == 0:

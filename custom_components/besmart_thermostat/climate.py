@@ -9,22 +9,6 @@ different control.
 version: 2
 tested with home-assistant >= 0.96
 
-Configuration example:
-
-climate:
-  - platform: Besmart
-    name: Besmart Thermostat
-    username: USERNAME
-    password: 10080
-    room: Soggiorno
-    scan_interval: 10
-
-logging options:
-
-logger:
-  default: info
-  logs:
-    custom_components.climate.besmart_thermostat: debug
 """
 import logging
 from datetime import datetime
@@ -51,6 +35,7 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
+    CONF_UNIQUE_ID,
     CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
@@ -58,15 +43,12 @@ from homeassistant.const import (
     TEMP_FAHRENHEIT,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-from .const import (
-    DEFAULT_NAME,
-)
-from .utils import (
-    BesmartClient,
-)
+from .const import DEFAULT_NAME, DOMAIN
+from .utils import BesmartClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,28 +60,10 @@ DEFAULT_TIMEOUT = 3
 ATTR_MODE = "mode"
 STATE_UNKNOWN = "unknown"
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-    }
-)
-
 SUPPORT_FLAGS = (
     SUPPORT_PRESET_MODE | SUPPORT_TARGET_TEMPERATURE_RANGE | SUPPORT_TARGET_TEMPERATURE
 )
 
-def create_device(room, client) -> Thermostat:
-    entry_name = config.get(CONF_NAME)
-    room_name = room.get("name")
-    device_name = "{} {}".format(entry_name, room_name)
-    return Thermostat(device_name, room_name, client)
-
-async def _async_setup_devices(client: BesmartClient) -> None:
-    rooms = await hass.async_add_executor_job(client.rooms)
-    devices = map(create_device, rooms)
-    add_devices(devices)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -107,19 +71,29 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     client = config_entry.runtime_data
-    await _async_setup_devices(client)
+    besmart_config = config_entry.options
+    entry_id = config_entry.entry_id
+    entry_name = besmart_config[CONF_NAME]
+
+    rooms = await hass.async_add_executor_job(client.rooms)
+
+    new_devices = []
+    for roomKey in rooms:
+        roomData = rooms[roomKey]
+        room_id = roomData.get("therId")
+        room_name = roomData.get("name")
+        new_devices.append(Thermostat(entry_id, entry_name, room_id, room_name, client))
+
+    for new_device in new_devices:
+        await hass.async_add_executor_job(new_device.update)
+
+    if new_devices:
+        async_add_entities(new_devices) #, update_before_add=True)
 
 
-# pylint: disable=unused-argument
-async def async_setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-):
-    """Setup the Besmart thermostats."""
-    client = BesmartClient(config.get(CONF_USERNAME), config.get(CONF_PASSWORD))
-    await _async_setup_devices(client)
+async def async_remove_entry(hass, entry) -> None:
+    """Handle removal of an entry."""
+    _LOGGER.warn("REMOVING ENTRY")
 
 
 # pylint: disable=abstract-method
@@ -164,10 +138,12 @@ class Thermostat(ClimateEntity):
     # BeSmart Season
     HVAC_MODE_HA_BESMART = {HVAC_MODE_HEAT: "1", HVAC_MODE_COOL: "0"}
 
-    def __init__(self, name, room, client):
+    def __init__(self, device_id, name, room_id, room_name, client):
         """Initialize the thermostat."""
+        self._device_id = device_id
         self._name = name
-        self._room_name = room
+        self._room_id = room_id
+        self._room_name = room_name
         self._cl = client
         self._current_temp = 0
         self._current_state = self.IDLE
@@ -180,7 +156,30 @@ class Thermostat(ClimateEntity):
         self._saveT = 0
         self._comfT = 0
         self._season = "1"
-        self.update()
+
+        # As per the sensor, this must be a unique value within this domain. This is done
+        # by using the device ID, and appending "_battery"
+        self._attr_unique_id = f"{self._device_id}:{self._room_id}"
+
+        # The name of the entity
+        self._attr_name = f"{self._name} Thermostat [{self._room_name}]"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={
+                (DOMAIN, self._attr_unique_id)
+            },
+            name=f"{self._name} Thermostat [{self._room_name}]",
+            manufacturer="Riello S.p.A.",
+            model="BeSMART Thermostat",
+            model_id="BeSMART Thermostat",
+            serial_number=self._room_id,
+            suggested_area=self._room_name,
+            sw_version="1.0",
+            # via_device=(DOMAIN, self.api.bridgeid),
+        )
 
     @property
     def current_temperature(self):
@@ -218,12 +217,12 @@ class Thermostat(ClimateEntity):
     @property
     def max_temp(self):
         """TODO The maximum temperature."""
-        return 69.0
+        return self.CLIMATE_TEMP_MAX
 
     @property
     def min_temp(self):
         """TODO The minimum temperature."""
-        return 5.1
+        return self._saveT
 
     @property
     def precision(self):
