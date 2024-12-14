@@ -43,32 +43,6 @@ from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-
-
-
-from homeassistant.components.schedule import (
-    Schedule,
-    ScheduleStorageCollection,
-    DOMAIN as SCHEDULE_DOMAIN,
-    BASE_SCHEMA as SCHEDULE_BASE_SCHEMA,
-    STORAGE_SCHEDULE_SCHEMA as SCHEDULE_STORAGE_SCHEDULE_SCHEMA
-)
-from homeassistant.helpers.storage import Store
-from homeassistant.helpers.collection import (
-    CollectionEntity,
-    DictStorageCollection,
-    DictStorageCollectionWebsocket,
-    IDManager,
-    SerializedStorageCollection,
-    YamlCollection,
-    sync_entity_lifecycle,
-)
-
-
-
-
-
-
 from .const import DEFAULT_NAME, DOMAIN
 from .utils import BesmartClient
 
@@ -107,43 +81,6 @@ async def async_setup_entry(
         room_id = roomData.get("therId")
         room_name = roomData.get("name")
         new_entities.append(Thermostat(hass, config_entry, room_id, room_name))
-        # Schedule
-        component = EntityComponent[ThermostatSchedule](_LOGGER, SCHEDULE_DOMAIN, hass)
-        id_manager = IDManager()
-        # yaml_collection = YamlCollection(_LOGGER, id_manager)
-        # sync_entity_lifecycle(hass, SCHEDULE_DOMAIN, SCHEDULE_DOMAIN, component, yaml_collection, Schedule)
-        # await yaml_collection.async_load(
-        #     [{
-        #         CONF_ID: "some_schedule",
-        #         "name": "Thermostat schedule",
-        #         "monday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "tuesday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "wednesday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "thursday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "friday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "saturday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #         "sunday": [{"from":"17:00:00", "to":"21:00:00"}],
-        #     }]
-        # )
-        storage_collection = ScheduleStorageCollection(
-            Store(
-                hass,
-                key=DOMAIN,
-                version=1,
-                minor_version=1,
-            ),
-            id_manager,
-        )
-        sync_entity_lifecycle(hass, SCHEDULE_DOMAIN, SCHEDULE_DOMAIN, component, storage_collection, Schedule)
-        await storage_collection.async_load()
-        DictStorageCollectionWebsocket(
-            storage_collection,
-            SCHEDULE_DOMAIN,
-            SCHEDULE_DOMAIN,
-            SCHEDULE_BASE_SCHEMA | SCHEDULE_STORAGE_SCHEDULE_SCHEMA,
-            SCHEDULE_BASE_SCHEMA | SCHEDULE_STORAGE_SCHEDULE_SCHEMA,
-        ).async_setup(hass)
-        # TODO rest of schedule init
 
     for new_entity in new_entities:
         await hass.async_add_executor_job(new_entity.update)
