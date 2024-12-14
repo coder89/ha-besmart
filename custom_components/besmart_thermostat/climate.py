@@ -28,12 +28,15 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
+    CONF_ID,
     CONF_UNIQUE_ID,
     CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_MODE,
     UnitOfTemperature,
 )
+from homeassistant.components.schedule import Schedule
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import async_generate_entity_id
@@ -45,7 +48,7 @@ from .utils import BesmartClient
 
 _LOGGER = logging.getLogger(__name__)
 
-DEPENDENCIES = ["switch", "sensor"]
+DEPENDENCIES = ["schedule"]
 REQUIREMENTS = ["requests"]
 
 DEFAULT_NAME = "BeSMART Thermostat"
@@ -56,9 +59,10 @@ ATTR_MODE = "mode"
 STATE_UNKNOWN = "unknown"
 
 SUPPORT_FLAGS = (
-    ClimateEntityFeature.TARGET_TEMPERATURE | 
-    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE | 
-    ClimateEntityFeature.PRESET_MODE
+    ClimateEntityFeature.TARGET_TEMPERATURE |
+    ClimateEntityFeature.PRESET_MODE |
+    ClimateEntityFeature.TURN_ON |
+    ClimateEntityFeature.TURN_OFF
 )
 
 
@@ -68,10 +72,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     client = config_entry.runtime_data
-    besmart_config = config_entry.options
-    entry_id = config_entry.entry_id
-    entry_name = besmart_config[CONF_NAME]
-    device = entry.interface_device.device_info
 
     rooms = await hass.async_add_executor_job(client.rooms)
 
@@ -80,7 +80,7 @@ async def async_setup_entry(
         roomData = rooms[roomKey]
         room_id = roomData.get("therId")
         room_name = roomData.get("name")
-        new_entities.append(Thermostat(hass, device, entry_id, entry_name, room_id, room_name, client))
+        new_entities.append(Thermostat(hass, config_entry, room_id, room_name))
 
     for new_entity in new_entities:
         await hass.async_add_executor_job(new_entity.update)
@@ -116,6 +116,7 @@ class Thermostat(ClimateEntity):
 
     CLIMATE_TEMP_MAX = 35.0
     CLIMATE_TEMP_STEP = 0.2
+    CLIMATE_TEMP_PRECISION = 0.1
 
     PRESET_HA_TO_BESMART = {
         "AUTO": AUTO,
@@ -142,13 +143,16 @@ class Thermostat(ClimateEntity):
     # BeSmart Season
     HVAC_MODE_HA_BESMART = {HVACMode.HEAT: "1", HVACMode.COOL: "0"}
 
-    def __init__(self, hass, device, entry_id, entry_name, room_id, room_name, client):
+    def __init__(self, hass, config_entry, room_id, room_name):
         """Initialize the thermostat."""
-        self._entry_name = entry_name
-        self._entry_id = entry_id
+        self._entry_name = config_entry.options[CONF_NAME]
+        self._supported_modes = config_entry.options[CONF_MODE]
+        _LOGGER.warn("self._supported_modes")
+        _LOGGER.warn(self._supported_modes)
+        self._entry_id = config_entry.entry_id
         self._room_id = room_id
         self._room_name = room_name
-        self._cl = client
+        self._cl = config_entry.runtime_data
         self._current_temp = 0
         self._current_state = self.IDLE
         self._current_operation = ""
@@ -162,7 +166,21 @@ class Thermostat(ClimateEntity):
         self._season = "1"
 
         # link to BeSMART device
-        self._attr_device_info = device
+        self._attr_device_info = config_entry.interface_device.device_info
+
+        # DeviceInfo(
+        #     identifiers={
+        #         (DOMAIN, self._attr_unique_id)
+        #     },
+        #     name=self._entry_name,
+        #     manufacturer="Riello S.p.A.",
+        #     model="BeSMART Thermostat",
+        #     model_id="BeSMART Thermostat",
+        #     serial_number=self._room_id,
+        #     suggested_area=self._room_name,
+        #     sw_version="1.0",
+        #     via_device=(DOMAIN, self.api.bridgeid),
+        # )
 
         # unique_id = <deviceID>:<roomID>
         self._attr_unique_id = f"{self._entry_id}:{self._room_id}"
@@ -172,23 +190,6 @@ class Thermostat(ClimateEntity):
 
         # entity_id = climate.<name>
         self._entity_id = async_generate_entity_id(self._entity_id_format, self._attr_name or self._default_name, None, hass)
-
-    # @property
-    # def device_info(self) -> DeviceInfo:
-    #     """Return the device info."""
-    #     return DeviceInfo(
-    #         identifiers={
-    #             (DOMAIN, self._attr_unique_id)
-    #         },
-    #         name=self._entry_name,
-    #         manufacturer="Riello S.p.A.",
-    #         model="BeSMART Thermostat",
-    #         model_id="BeSMART Thermostat",
-    #         serial_number=self._room_id,
-    #         suggested_area=self._room_name,
-    #         sw_version="1.0",
-    #         # via_device=(DOMAIN, self.api.bridgeid),
-    #     )
 
     @property
     def current_temperature(self):
@@ -205,38 +206,33 @@ class Thermostat(ClimateEntity):
             else:
                 return HVACAction.COOLING
         else:
-            return HVACAction.OFF
+            return HVACAction.IDLE
+        # TODO: Return OFF if device is offline
 
     @property
     def hvac_mode(self):
         """Current mode."""
         return self.HVAC_MODE_BESMART_TO_HA.get(self._season)
 
-    def set_hvac_mode(self, hvac_mode):
-        """Set HVAC mode (COOL, HEAT)."""
-        mode = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
-        # self._cl.setSettings(self._room_name, mode)
-        _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
-
     @property
     def hvac_modes(self):
         """List of available operation modes."""
-        return self.HVAC_MODE_LIST
+        return self._supported_modes
 
     @property
     def max_temp(self):
-        """TODO The maximum temperature."""
+        """The maximum temperature."""
         return self.CLIMATE_TEMP_MAX
 
     @property
     def min_temp(self):
-        """TODO The minimum temperature."""
+        """The minimum temperature."""
         return self._saveT
 
     @property
     def precision(self):
-        """TODO The temperature precision (defaults to 0.1deg C)."""
-        return 0.1
+        """The temperature precision (defaults to 0.1deg C)."""
+        return self.CLIMATE_TEMP_PRECISION
 
     @property
     def preset_mode(self):
@@ -248,24 +244,10 @@ class Thermostat(ClimateEntity):
         """List of supported preset (comfort, home, sleep, Party, Off)."""
         return self.PRESET_MODE_LIST
 
-    def set_preset_mode(self, preset_mode):
-        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
-        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
-        # self._cl.setRoomMode(self._room_name, mode)
-        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
-
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
         return self._comfT
-
-    @property
-    def target_temperature_high(self):
-        return self.CLIMATE_TEMP_MAX
-
-    @property
-    def target_temperature_low(self):
-        return self._saveT
 
     @property
     def target_temperature_step(self):
@@ -279,27 +261,6 @@ class Thermostat(ClimateEntity):
             return UnitOfTemperature.CELSIUS
         else:
             return UnitOfTemperature.FAHRENHEIT
-
-    def set_temperature(self, **kwargs):
-        """Set new target temperature."""
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        target_temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
-        target_temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
-
-        _LOGGER.warn(
-            "temperature Frost: {} Eco: {} Conf: {}".format(
-                temperature, target_temp_low, target_temp_high
-            )
-        )
-        _LOGGER.warn(dir(kwargs))
-
-        # if temperature:
-            # self._cl.setRoomConfortTemp(self._room_name, temperature)
-            # self._cl.setRoomFrostTemp(self._room_name, temperature)
-        # if target_temp_high:
-            # self._cl.setRoomConfortTemp(self._room_name, target_temp_high)
-        # if target_temp_low:
-            # self._cl.setRoomECOTemp(self._room_name, target_temp_low)
 
     @property
     def supported_features(self):
@@ -358,6 +319,32 @@ class Thermostat(ClimateEntity):
                 self._current_temp = 0
             self._current_unit = data.get("tempUnit")
             self._season = data.get("season")
+
+    def set_hvac_mode(self, hvac_mode):
+        """Set HVAC mode (COOL, HEAT) if supported."""
+        mode = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
+        if mode in self._supported_modes:
+            self._cl.setSettings(self._room_name, mode)
+            _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
+
+    def set_preset_mode(self, preset_mode):
+        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
+        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
+        self._cl.setRoomMode(self._room_name, mode)
+        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
+
+    def set_temperature(self, **kwargs):
+        """Set new target temperature."""
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+
+        # if temperature:
+            # self._cl.setRoomConfortTemp(self._room_name, temperature)
+            # self._cl.setRoomFrostTemp(self._room_name, temperature)
+        # if target_temp_high:
+            # self._cl.setRoomConfortTemp(self._room_name, target_temp_high)
+        # if target_temp_low:
+            # self._cl.setRoomECOTemp(self._room_name, target_temp_low)
+
 
     @property
     def extra_state_attributes(self):

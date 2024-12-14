@@ -11,12 +11,14 @@ from homeassistant.const import (
     CONF_NAME,
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_MODE,
 )
 from homeassistant.helpers import selector
 from homeassistant.helpers.schema_config_entry_flow import (
     SchemaConfigFlowHandler,
     SchemaFlowFormStep,
 )
+from homeassistant.components.climate.const import HVACMode
 
 from .const import (
     DEFAULT_NAME,
@@ -26,7 +28,14 @@ from .const import (
 OPTIONS_SCHEMA = {
     vol.Required(CONF_NAME): selector.TextSelector(),
     vol.Required(CONF_USERNAME): selector.TextSelector(),
-    vol.Required(CONF_PASSWORD): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
+    vol.Required(CONF_PASSWORD): selector.TextSelector({ "type": selector.TextSelectorType.PASSWORD }),
+    vol.Required(CONF_MODE): selector.SelectSelector({
+        "options": [
+            { "label": "Heating", "value": HVACMode.HEAT },
+            { "label": "Cooling", "value": HVACMode.COOL },
+        ],
+        "multiple": True,
+    }),
 }
 
 CONFIG_SCHEMA = {

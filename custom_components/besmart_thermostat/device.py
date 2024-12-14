@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -18,11 +19,11 @@ class BesmartInterfaceDevice:
         device_registry = dr.async_get(hass)
 
         device_id = (DOMAIN, entry.entry_id)
-        self.device = self.device_registry.async_get_or_create(
+        self.device = device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={device_id},
             manufacturer="Signify",
-            name=entry.options.name,
+            name=entry.options[CONF_NAME],
             model="config.modelname",
             model_id="config.modelid",
             sw_version="config.swversion",

@@ -8,12 +8,14 @@
                 "data": {
                     "name": "Name",
                     "username": "Username",
-                    "password": "Password"
+                    "password": "Password",
+                    "mode": "Work mode"
                 },
                 "data_description": {
                     "name": "Name of the integration.",
                     "username": "Provide username for the BeSMART account.",
-                    "password": "Provide password for the BeSMART account."
+                    "password": "Provide password for the BeSMART account.",
+                    "mode": "Select available work modes of BeSMART controlled device"
                 }
             }
         }
@@ -24,12 +26,14 @@
                 "data": {
                     "name": "Name",
                     "username": "Username",
-                    "password": "Password"
+                    "password": "Password",
+                    "mode": "Work mode"
                 },
                 "data_description": {
                     "name": "Name of the integration.",
                     "username": "Provide username for the BeSMART account.",
-                    "password": "Provide password for the BeSMART account."
+                    "password": "Provide password for the BeSMART account.",
+                    "mode": "Select available work modes of BeSMART controlled device"
                 }
             }
         }
