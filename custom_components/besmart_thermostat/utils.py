@@ -198,7 +198,7 @@ class BesmartClient(object):
 
             data = {
                 "deviceId": self._device.get("deviceId"),
-                "therId": room.get("roomMark"),
+                "therId": room.get("therId"),
                 "tempSet": tpCInt + "",
                 "tempSetFloat": tpCIntFloat + "",
             }

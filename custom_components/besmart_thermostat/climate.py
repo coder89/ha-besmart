@@ -345,13 +345,8 @@ class Thermostat(ClimateEntity):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
 
-        # if temperature:
-            # self._cl.setRoomConfortTemp(self._room_name, temperature)
-            # self._cl.setRoomFrostTemp(self._room_name, temperature)
-        # if target_temp_high:
-            # self._cl.setRoomConfortTemp(self._room_name, target_temp_high)
-        # if target_temp_low:
-            # self._cl.setRoomECOTemp(self._room_name, target_temp_low)
+        if temperature:
+            self._cl.setRoomTemp(self._room_name, temperature)
 
 
     @property
