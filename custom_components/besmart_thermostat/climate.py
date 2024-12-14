@@ -157,6 +157,7 @@ class Thermostat(ClimateEntity):
         self._current_state = self.IDLE
         self._current_operation = ""
         self._current_unit = 0
+        self._tempSet = 0
         self._tempSetMark = 0
         self._heating_state = False
         self._battery = "0"
@@ -247,7 +248,7 @@ class Thermostat(ClimateEntity):
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        return self._comfT
+        return self._tempSet
 
     @property
     def target_temperature_step(self):
@@ -270,55 +271,62 @@ class Thermostat(ClimateEntity):
     def update(self):
         """Update the data from the thermostat."""
         _LOGGER.debug("Update called")
-        data = self._cl.roomByName(self._room_name)
+        room = self._cl.roomByName(self._room_name)
+        _LOGGER.debug(room)
+        if not room or not room.get("error") == 0:
+            return
+
+        try:
+            self._tempSet = float(room.get("tempSet"))
+        except ValueError:
+            self._tempSet = 0.0
+
+        data = self._cl.roomdata(room)
         _LOGGER.debug(data)
-        if data and data.get("error") == 0:
-            try:
-                # from Sunday (0) to Saturday (6)
-                today = datetime.today().isoweekday() % 7
-                # 48 slot per day
-                index = datetime.today().hour * 2 + (
+        if not data or not data.get("error") == 0:
+            return
+
+        try:
+            # from Sunday (0) to Saturday (6)
+            today = datetime.today().isoweekday() % 7
+            # 48 slot per day
+            index = datetime.today().hour * 2 + (
                     1 if datetime.today().minute > 30 else 0
-                )
-                programWeek = data["programWeek"]
-                # delete programWeek to have less noise on debug output
-                del data["programWeek"]
-
-                self._tempSetMark = programWeek[today][index]
-            except Exception as ex:
-                _LOGGER.warning(ex)
-                self._tempSetMark = "2"
-
-            try:
-                self._battery =not bool(int(data.get("bat"))) #corrected to raise battery alert in ha 1=problem status false
-            except ValueError:
-                self._battery = "0"
-
-            try:
-                self._frostT = float(data.get("frostT"))
-            except ValueError:
-                self._frostT = 5.0
-            try:
-                self._saveT = float(data.get("saveT"))
-            except ValueError:
-                self._saveT = 16.0
-
-            try:
-                self._comfT = float(data.get("comfT"))
-            except ValueError:
-                self._comfT = 20.0
-            try:
-                self._current_temp = float(data.get("tempNow"))
-            except ValueError:
-                self._current_temp = 20.0
-
-            self._heating_state = data.get("heating", "") == "1"
-            try:
-                self._current_state = int(data.get("mode"))
-            except ValueError:
-                self._current_temp = 0
-            self._current_unit = data.get("tempUnit")
-            self._season = data.get("season")
+            )
+            programWeek = data["programWeek"]
+            # delete programWeek to have less noise on debug output
+            del data["programWeek"]
+            self._tempSetMark = programWeek[today][index]
+        except Exception as ex:
+            _LOGGER.warning(ex)
+            self._tempSetMark = "2"
+        try:
+            self._battery =not bool(int(data.get("bat"))) #corrected to raise battery alert in ha 1=problem status false
+        except ValueError:
+            self._battery = "0"
+        try:
+            self._frostT = float(data.get("frostT"))
+        except ValueError:
+            self._frostT = 0.0
+        try:
+            self._saveT = float(data.get("saveT"))
+        except ValueError:
+            self._saveT = 0.0
+        try:
+            self._comfT = float(data.get("comfT"))
+        except ValueError:
+            self._comfT = 0.0
+        try:
+            self._current_temp = float(data.get("tempNow"))
+        except ValueError:
+            self._current_temp = 0.0
+        self._heating_state = data.get("heating", "") == "1"
+        try:
+            self._current_state = int(data.get("mode"))
+        except ValueError:
+            self._current_temp = 0
+        self._current_unit = data.get("tempUnit")
+        self._season = data.get("season")
 
     def set_hvac_mode(self, hvac_mode):
         """Set HVAC mode (COOL, HEAT) if supported."""
@@ -358,12 +366,6 @@ class Thermostat(ClimateEntity):
             # "season_mode": self.hvac_mode,
             # "heating_state": self._heating_state,
         }
-
-class ThermostatSchedule(Schedule):
-    def __init__(self, config: ConfigType, editable: bool) -> None:
-        """Initialize BeSMART Thermostat schedule."""
-        super().__init__(config, editable)
-        self._attr_name = "test besmart schedule"
 
 #class Boiler(WaterHeater):
 #    def __init__():

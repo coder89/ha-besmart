@@ -147,7 +147,7 @@ class BesmartClient(object):
             self.rooms()
 
         if self._rooms:
-            return self.roomdata(self._rooms.get(name.lower()))
+            return self._rooms.get(name.lower())
         return None
 
     def setRoomMode(self, room_name, mode):
@@ -156,7 +156,7 @@ class BesmartClient(object):
         if self._device and room:
             data = {
                 "deviceId": self._device.get("deviceId"),
-                "therId": room.get("roomMark"),
+                "therId": room.get("therId"),
                 "mode": mode,
             }
 
@@ -187,7 +187,7 @@ class BesmartClient(object):
             new_temp = round(new_temp, 1)
             _LOGGER.debug("room: {}".format(room))
 
-            if room.get("tempUnit") in {"N/A", "0"}:
+            if room.get("unit") in {"N/A", "0"}:
                 tpCInt, tpCIntFloat = str(new_temp).split(".")
             else:
                 tpCInt, tpCIntFloat = self._fahToCent(new_temp).split(".")
@@ -221,7 +221,7 @@ class BesmartClient(object):
         if self._device and room:
             data = {
                 "deviceId": self._device.get("deviceId"),
-                "therId": room.get("roomMark"),
+                "therId": room.get("therId"),
             }
 
             resp = self._s.post(
@@ -252,7 +252,7 @@ class BesmartClient(object):
                 ).split(".")
                 data = {
                     "deviceId": self._device.get("deviceId"),
-                    "therId": room.get("roomMark"),
+                    "therId": room.get("therId"),
                     "minTempSetPointIP": min_temp_set_point_ip,
                     "minTempSetPointFP": min_temp_set_point_fp,
                     "maxTempSetPointIP": max_temp_set_point_ip,
