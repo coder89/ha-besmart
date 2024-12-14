@@ -1,10 +1,9 @@
 """Constants for the BeSMART Thermostat."""
 
 from homeassistant.const import Platform
-from homeassistant.components.schedule.const import DOMAIN as SCHEDULE_DOMAIN
 
 DOMAIN = "besmart_thermostat"
 
-PLATFORMS = [Platform.CLIMATE, SCHEDULE_DOMAIN]
+PLATFORMS: list[Platform] = [Platform.CLIMATE]
 
 DEFAULT_NAME = "BeSMART Thermostat"

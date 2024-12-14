@@ -36,10 +36,11 @@ from homeassistant.const import (
     CONF_MODE,
     UnitOfTemperature,
 )
-from homeassistant.components.schedule import Schedule
+from homeassistant.components.schedule import Schedule, DOMAIN as SCHEDULE_DOMAIN
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import async_generate_entity_id
+from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
@@ -81,6 +82,9 @@ async def async_setup_entry(
         room_id = roomData.get("therId")
         room_name = roomData.get("name")
         new_entities.append(Thermostat(hass, config_entry, room_id, room_name))
+        # Schedule
+        component = EntityComponent[ThermostatSchedule](_LOGGER, SCHEDULE_DOMAIN, hass)
+        # TODO rest of schedule init
 
     for new_entity in new_entities:
         await hass.async_add_executor_job(new_entity.update)
@@ -358,6 +362,12 @@ class Thermostat(ClimateEntity):
             # "season_mode": self.hvac_mode,
             # "heating_state": self._heating_state,
         }
+
+class ThermostatSchedule(Schedule):
+    def __init__(self, config: ConfigType, editable: bool) -> None:
+        """Initialize BeSMART Thermostat schedule."""
+        super().__init__(config, editable)
+        self._attr_name = "test besmart schedule"
 
 #class Boiler(WaterHeater):
 #    def __init__():
