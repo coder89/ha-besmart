@@ -18,7 +18,7 @@ from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import PLATFORMS
 from .device import BesmartInterfaceDevice
-from .utils import BesmartClient
+from .api import BesmartClient
 
 type BesmartConfigEntry = ConfigEntry[BesmartClient]
 
@@ -30,15 +30,13 @@ async def async_setup_entry(
 ) -> bool:
     """Set up besmart_thermostat from a config entry."""
 
-    _LOGGER.warn("__init__.async_setup_entry")
-
     # 1. Create API instance
     besmart_config = entry.options
-    client = BesmartClient(besmart_config[CONF_USERNAME], besmart_config[CONF_PASSWORD])
+    client = BesmartClient(hass, besmart_config[CONF_USERNAME], besmart_config[CONF_PASSWORD])
 
     # 2. Validate the API connection (and authentication)
     try:
-        await hass.async_add_executor_job(client.login)
+        wifi_boxes = await client.login()
     except HTTPError as ex:
         if ex.response.status_code == HTTPStatus.UNAUTHORIZED:
             raise ConfigEntryAuthFailed("Invalid credentials.") from ex
@@ -49,8 +47,12 @@ async def async_setup_entry(
     # 3. Store an API object for your platforms to access
     entry.runtime_data = client
 
-    # 4. Register BeSMART Controller device
-    entry.interface_device = BesmartInterfaceDevice(hass, entry)
+    # 4. Register BeSMART Controller devices for all wifi boxes
+    interface_devices = []
+    for wifi_box in wifi_boxes:
+        devices = await client.devices(wifi_box)
+        interface_devices.append(BesmartInterfaceDevice(hass, entry, wifi_box, devices))
+    entry.interface_devices = interface_devices
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_config_entry_update_listener))
@@ -63,7 +65,6 @@ async def async_config_entry_update_listener(
     entry: ConfigEntry,
 ) -> None:
     """Update listener, called when the config entry options are changed."""
-    _LOGGER.warn("__init__.async_config_entry_update_listener")
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -73,7 +74,6 @@ async def async_remove_config_entry_device(
     device_entry: DeviceEntry,
 ) -> bool:
     """Remove a config entry from a device."""
-    _LOGGER.warn("__init__.async_remove_config_entry_device")
     return True
 
 
@@ -82,5 +82,4 @@ async def async_unload_entry(
     entry: BesmartConfigEntry,
 ) -> bool:
     """Unload a config entry."""
-    _LOGGER.warn("__init__.async_unload_entry")
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

@@ -6,14 +6,9 @@
   "issue_tracker": "https://github.com/coder89/ha-besmart/issues",
   "integration_type": "device",
   "dependencies": [],
-  "after_dependencies": [
-    "http"
-  ],
+  "after_dependencies": ["http"],
   "config_flow": true,
-  "codeowners": [
-    "@muchasuerte",
-    "@coder89"
-  ],
+  "codeowners": ["@coder89"],
   "requirements": [],
   "iot_class": "cloud_polling"
 }

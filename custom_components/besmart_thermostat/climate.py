@@ -44,12 +44,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DEFAULT_NAME, DOMAIN
-from .utils import BesmartClient
 
 _LOGGER = logging.getLogger(__name__)
 
 DEPENDENCIES = ["schedule"]
-REQUIREMENTS = ["requests"]
+REQUIREMENTS = ["requests", "asyncio"]
 
 DEFAULT_NAME = "BeSMART Thermostat"
 DEFAULT_TIMEOUT = 3
@@ -71,27 +70,21 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    client = config_entry.runtime_data
-
-    rooms = await hass.async_add_executor_job(client.rooms)
-
     new_entities = []
-    for roomKey in rooms:
-        roomData = rooms[roomKey]
-        room_id = roomData.get("therId")
-        room_name = roomData.get("name")
-        new_entities.append(Thermostat(hass, config_entry, room_id, room_name))
-
-    for new_entity in new_entities:
-        await hass.async_add_executor_job(new_entity.update)
+    
+    for device in config_entry.interface_devices:
+        wifi_box = device.wifi_box
+        for thermostat in device.thermostats:
+            room_id = thermostat.get("id")
+            room_name = thermostat.get("name")
+            new_entities.append(Thermostat(hass, config_entry, wifi_box, room_id, room_name, device.device_info))
 
     if new_entities:
-        async_add_entities(new_entities) #, update_before_add=True)
+        async_add_entities(new_entities, update_before_add=True)
 
 
 async def async_remove_entry(hass, entry) -> None:
     """Handle removal of an entry."""
-    _LOGGER.warn("REMOVING ENTRY")
 
 
 # pylint: disable=abstract-method
@@ -106,7 +99,7 @@ class Thermostat(ClimateEntity):
     _attr_unique_id: str
 
     # BeSmart thModel = 5
-    # BeSmart WorkMode
+    # BeSmart mode
     AUTO = 0  # 'Auto'
     MANUAL = 1  # 'Manuale - Confort'
     ECONOMY = 2  # 'Holiday - Economy'
@@ -115,6 +108,7 @@ class Thermostat(ClimateEntity):
     DHW = 5 # 'Sanitario - Domestic hot water only'
 
     CLIMATE_TEMP_MAX = 35.0
+    CLIMATE_TEMP_MIN = 3.0
     CLIMATE_TEMP_STEP = 0.2
     CLIMATE_TEMP_PRECISION = 0.1
 
@@ -135,21 +129,25 @@ class Thermostat(ClimateEntity):
         IDLE: "IDLE",
         DHW: "DHW",
     }
-    PRESET_MODE_LIST = list(PRESET_HA_TO_BESMART)
+    PRESET_MODE_LIST = PRESET_MODE_LIST = list(p for p in PRESET_HA_TO_BESMART if p != "DHW")
 
-    HVAC_MODE_LIST = (HVACMode.COOL, HVACMode.HEAT)
-    HVAC_MODE_BESMART_TO_HA = {"1": HVACMode.HEAT, "0": HVACMode.COOL}
+    HVAC_MODE_BESMART_TO_HA = {
+        "1": HVACMode.HEAT,
+        "0": HVACMode.COOL,
+    }
 
     # BeSmart Season
-    HVAC_MODE_HA_BESMART = {HVACMode.HEAT: "1", HVACMode.COOL: "0"}
+    HVAC_MODE_HA_BESMART = {
+        HVACMode.HEAT: "1",
+        HVACMode.COOL: "0",
+    }
 
-    def __init__(self, hass, config_entry, room_id, room_name):
+    def __init__(self, hass, config_entry, wifi_box, room_id, room_name, device_info):
         """Initialize the thermostat."""
         self._entry_name = config_entry.options[CONF_NAME]
-        self._supported_modes = config_entry.options[CONF_MODE]
-        _LOGGER.warn("self._supported_modes")
-        _LOGGER.warn(self._supported_modes)
+        self._supported_modes = config_entry.options[CONF_MODE] + [HVACMode.OFF]
         self._entry_id = config_entry.entry_id
+        self._wifi_box = wifi_box
         self._room_id = room_id
         self._room_name = room_name
         self._cl = config_entry.runtime_data
@@ -167,7 +165,7 @@ class Thermostat(ClimateEntity):
         self._season = "1"
 
         # link to BeSMART device
-        self._attr_device_info = config_entry.interface_device.device_info
+        self._attr_device_info = device_info
 
         # DeviceInfo(
         #     identifiers={
@@ -192,6 +190,9 @@ class Thermostat(ClimateEntity):
         # entity_id = climate.<name>
         self._entity_id = async_generate_entity_id(self._entity_id_format, self._attr_name or self._default_name, None, hass)
 
+        # Disable backwards compatibility for new turn_on/off methods
+        self._enable_turn_on_off_backwards_compatibility = False
+
     @property
     def current_temperature(self):
         """Return the current temperature."""
@@ -206,13 +207,16 @@ class Thermostat(ClimateEntity):
                 return HVACAction.HEATING
             else:
                 return HVACAction.COOLING
+        elif self._current_state == self.DHW:
+            return HVACAction.OFF
         else:
             return HVACAction.IDLE
-        # TODO: Return OFF if device is offline
 
     @property
     def hvac_mode(self):
         """Current mode."""
+        if self._current_state == self.DHW:
+            return HVACMode.OFF
         return self.HVAC_MODE_BESMART_TO_HA.get(self._season)
 
     @property
@@ -223,12 +227,22 @@ class Thermostat(ClimateEntity):
     @property
     def max_temp(self):
         """The maximum temperature."""
-        return self.CLIMATE_TEMP_MAX
+        if self._tempSetMark == "2":
+            return self.CLIMATE_TEMP_MAX
+        elif self._tempSetMark == "1":
+            return self._comfT - self.CLIMATE_TEMP_STEP
+        elif self._tempSetMark == "0":
+            return self._saveT - self.CLIMATE_TEMP_STEP
 
     @property
     def min_temp(self):
         """The minimum temperature."""
-        return self._saveT
+        if self._tempSetMark == "2":
+            return self._saveT + self.CLIMATE_TEMP_STEP
+        elif self._tempSetMark == "1":
+            return self._frostT + self.CLIMATE_TEMP_STEP
+        elif self._tempSetMark == "0":
+            return self.CLIMATE_TEMP_MIN
 
     @property
     def precision(self):
@@ -248,7 +262,12 @@ class Thermostat(ClimateEntity):
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        return self._tempSet
+        if self._tempSetMark == "2":
+            return self._comfT
+        elif self._tempSetMark == "1":
+            return self._saveT
+        elif self._tempSetMark == "0":
+            return self._frostT
 
     @property
     def target_temperature_step(self):
@@ -266,94 +285,25 @@ class Thermostat(ClimateEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
-        return SUPPORT_FLAGS
-
-    def update(self):
-        """Update the data from the thermostat."""
-        _LOGGER.debug("Update called")
-        room = self._cl.roomByName(self._room_name)
-        _LOGGER.debug(room)
-        if not room or not room.get("error") == 0:
-            return
-
-        try:
-            self._tempSet = float(room.get("tempSet"))
-        except ValueError:
-            self._tempSet = 0.0
-
-        data = self._cl.roomdata(room)
-        _LOGGER.debug(data)
-        if not data or not data.get("error") == 0:
-            return
-
-        try:
-            # from Sunday (0) to Saturday (6)
-            today = datetime.today().isoweekday() % 7
-            # 48 slot per day
-            index = datetime.today().hour * 2 + (
-                    1 if datetime.today().minute > 30 else 0
+        if self._current_state == self.DHW:
+            return (
+                ClimateEntityFeature.TURN_ON |
+                ClimateEntityFeature.TURN_OFF
             )
-            programWeek = data["programWeek"]
-            # delete programWeek to have less noise on debug output
-            del data["programWeek"]
-            self._tempSetMark = programWeek[today][index]
-        except Exception as ex:
-            _LOGGER.warning(ex)
-            self._tempSetMark = "2"
-        try:
-            self._battery =not bool(int(data.get("bat"))) #corrected to raise battery alert in ha 1=problem status false
-        except ValueError:
-            self._battery = "0"
-        try:
-            self._frostT = float(data.get("frostT"))
-        except ValueError:
-            self._frostT = 0.0
-        try:
-            self._saveT = float(data.get("saveT"))
-        except ValueError:
-            self._saveT = 0.0
-        try:
-            self._comfT = float(data.get("comfT"))
-        except ValueError:
-            self._comfT = 0.0
-        try:
-            self._current_temp = float(data.get("tempNow"))
-        except ValueError:
-            self._current_temp = 0.0
-        self._heating_state = data.get("heating", "") == "1"
-        try:
-            self._current_state = int(data.get("mode"))
-        except ValueError:
-            self._current_temp = 0
-        self._current_unit = data.get("tempUnit")
-        self._season = data.get("season")
 
-    def set_hvac_mode(self, hvac_mode):
-        """Set HVAC mode (COOL, HEAT) if supported."""
-        mode = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
-        if mode in self._supported_modes:
-            self._cl.setSettings(self._room_name, mode)
-            _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
-
-    def set_preset_mode(self, preset_mode):
-        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
-        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
-        self._cl.setRoomMode(self._room_name, mode)
-        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
-
-    def set_temperature(self, **kwargs):
-        """Set new target temperature."""
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-
-        if temperature:
-            self._cl.setRoomTemp(self._room_name, temperature)
-
+        return (
+            ClimateEntityFeature.TARGET_TEMPERATURE |
+            ClimateEntityFeature.PRESET_MODE |
+            ClimateEntityFeature.TURN_ON |
+            ClimateEntityFeature.TURN_OFF
+        )
 
     @property
     def extra_state_attributes(self):
         """Return the device specific state attributes."""
         return {
             ATTR_MODE: self._current_state,
+            "updating_temp": self._tempSet != self.target_temperature
             # "battery_state": self._battery,
             # "frost_t": self._frostT,
             # "confort_t": self._comfT,
@@ -362,26 +312,125 @@ class Thermostat(ClimateEntity):
             # "heating_state": self._heating_state,
         }
 
-#class Boiler(WaterHeater):
-#    def __init__():
+    async def async_update(self):
+        """Update the data from the thermostat."""
+        _LOGGER.debug("Update called")
 
-    
+        # Get thermostat data
+        thermostat = await self._cl.thermostat(self._wifi_box, self._room_id)
 
-    # min_temp	float	110°F	The minimum temperature that can be set.
-    # max_temp	float	140°F	The maximum temperature that can be set.
-    # current_temperature	float	None	The current temperature.
-    # target_temperature	float	None	The temperature we are trying to reach.
-    # target_temperature_high	float	None	Upper bound of the temperature we are trying to reach.
-    # target_temperature_low	float	None	Lower bound of the temperature we are trying to reach.
-    # temperature_unit	str	NotImplementedError	One of TEMP_CELSIUS, TEMP_FAHRENHEIT, or TEMP_KELVIN.
-    # current_operation	string	None	The current operation mode.
-    # operation_list	List[str]	None	List of possible operation modes.
-    # supported_features	List[str]	NotImplementedError	List of supported features.
-    # is_away_mode_on	bool	None	The current status of away mode.
+        try:
+            self._tempSet = float(thermostat.get("target_temp"))
+        except ValueError:
+            self._tempSet = 0.0
 
-    # @property
-    # def should_poll(self):
-    #     """Polling needed for thermostat."""
-    #     _LOGGER.debug("Should_Poll called")
-    #     return True
-    
+        # Current mode
+        try:
+            self._current_state = int(thermostat.get("mode"))
+        except ValueError:
+            self._current_state = 0
+        
+        if self._current_state == self.AUTO:
+            # Extract current program step
+            try:
+                # from Sunday (0) to Saturday (6)
+                today = datetime.today().isoweekday() % 7
+                # 48 slot per day
+                index = datetime.today().hour * 2 + (
+                        1 if datetime.today().minute > 30 else 0
+                )
+                programWeek = thermostat["program"]
+                # delete programWeek to have less noise on debug output
+                del thermostat["program"]
+                self._tempSetMark = programWeek[today][index]
+            except Exception as ex:
+                _LOGGER.warning(ex)
+                self._tempSetMark = "2"
+
+            # Extract manual toggle for ECO (night) mode
+            try:
+                # advance option is used for switching to the ECO mode (automatically disables at holiday_end_time)
+                if thermostat.get("advance") == "1":
+                    self._holiday_end_time = int(thermostat["holiday_end_time"])
+                    self._tempSetMark = "1"
+            except Exception as ex:
+                _LOGGER.warning(ex)
+                self._holiday_end_time = None
+        elif self._current_state == self.MANUAL or self._current_state == self.PARTY:
+            self._tempSetMark = "2"
+        elif self._current_state == self.ECONOMY:
+            self._tempSetMark = "1"
+        elif self._current_state == self.IDLE:
+            self._tempSetMark = "0"
+
+        # Extract programmed temperatures
+        try:
+            self._frostT = float(thermostat.get("frost_temp"))
+        except ValueError:
+            self._frostT = 0.0
+        try:
+            self._saveT = float(thermostat.get("economy_temp"))
+        except ValueError:
+            self._saveT = 0.0
+        try:
+            self._comfT = float(thermostat.get("comfort_temp"))
+        except ValueError:
+            self._comfT = 0.0
+
+        # Extract current temperature
+        try:
+            self._current_temp = float(thermostat.get("current_temp"))
+        except ValueError:
+            self._current_temp = 0.0
+
+        # Current heating state
+        self._heating_state = thermostat.get("heating_status", "") == "1"
+
+        # Misc
+        try:
+            self._battery = not bool(int(thermostat.get("battery_power")))
+        except ValueError:
+            self._battery = False
+        self._current_unit = thermostat.get("unit")
+        self._season = thermostat.get("season")
+
+    async def async_turn_on(self):
+        await self.async_set_preset_mode("AUTO")
+        await self.async_set_preset_mode(self.PRESET_BESMART_TO_HA.get(self.AUTO))
+
+    async def async_turn_off(self):
+        await self.async_set_preset_mode("DHW")
+
+    async def async_set_hvac_mode(self, hvac_mode):
+        """Set HVAC mode (COOL, HEAT) if supported."""
+        season = self.HVAC_MODE_HA_BESMART.get(hvac_mode)
+        if hvac_mode == HVACMode.OFF:
+            await self.async_turn_off()
+        elif hvac_mode in self._supported_modes:
+            current_hvac_mode = self.hvac_mode
+            if season != None and self._season != season:
+                await self._cl.setThermostatSeason(self._room_name, season)
+            if current_hvac_mode == HVACMode.OFF:
+                await self.async_turn_on()
+            _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
+
+    async def async_set_preset_mode(self, preset_mode):
+        """Set HVAC mode (comfort, home, sleep, Party, Off)."""
+        mode = self.PRESET_HA_TO_BESMART.get(preset_mode, self.AUTO)
+        await self._cl.setThermostatMode(self._wifi_box, self._room_id, mode)
+        _LOGGER.debug("Set operation mode=%s(%s)", str(preset_mode), str(mode))
+
+    async def async_set_temperature(self, **kwargs):
+        """Set new target temperature."""
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+
+        if not temperature:
+            return
+        
+        _LOGGER.debug(f"setting new temp {self._tempSetMark} {self._room_name} {temperature}")
+        if self._tempSetMark == "2":
+            await self._cl.setThermostatTemp(self._wifi_box, self._room_id, temperature, self._tempSetMark)
+        elif self._tempSetMark == "1":
+            await self._cl.setThermostatTemp(self._wifi_box, self._room_id, temperature, self._tempSetMark)
+        elif self._tempSetMark == "0":
+            await self._cl.setThermostatTemp(self._wifi_box, self._room_id, temperature, self._tempSetMark)
