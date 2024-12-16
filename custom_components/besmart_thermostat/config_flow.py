@@ -20,10 +20,7 @@ from homeassistant.helpers.schema_config_entry_flow import (
 )
 from homeassistant.components.climate.const import HVACMode
 
-from .const import (
-    DEFAULT_NAME,
-    DOMAIN,
-)
+from .const import DOMAIN
 
 OPTIONS_SCHEMA = {
     vol.Required(CONF_NAME): selector.TextSelector(),

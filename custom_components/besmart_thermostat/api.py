@@ -27,7 +27,7 @@ class BesmartClient(object):
     SET_THERMOSTAT_SETTINGS = "Android/Thermostats/setting"
     SET_THERMOSTAT_PROGRAM = "Android/Thermostats/program_196"
 
-    GET_BOILER_DATA = "Android/Boilers/data/user_id/{0}/wifi_box_id/{1}/token/{2}"
+    GET_BOILER_DATA = "Android/Boilers/data/user_id/{user}/wifi_box_id/{wifi_box}/token/{token}"
     SET_BOILER_MODE = "Android/Boilers/work_mode"
     SET_BOILER_DHW_TEMP = "Android/Boilers/dhw_target_temp"
 
@@ -261,6 +261,87 @@ class BesmartClient(object):
             _LOGGER.warning(ex)
             return False
 
+    async def boiler(self, wifi_box: str):
+        try:
+            await self._ensure_login()
+
+            async with asyncio.timeout(self._timeout):
+                res = await self._session.get(
+                    self.BASE_URL + self.GET_BOILER_DATA.format(
+                        user=self._user.get("id"),
+                        wifi_box=wifi_box,
+                        token=self.TOKEN,
+                    ),
+                )
+            
+            data = await res.json()
+            # TODO: check status
+
+            if not res.ok:
+                res.raise_for_status()
+
+            message = data.get("message")
+            _LOGGER.debug("boiler data: {}".format(message))
+            return message
+        except Exception as ex:
+            _LOGGER.warning(ex)
+            return None
+
+    async def setBoilerMode(self, wifi_box: str, mode: str):
+        try:
+            await self._ensure_login()
+
+            async with asyncio.timeout(self._timeout):
+                res = await self._session.put(
+                    self.BASE_URL + self.SET_BOILER_MODE,
+                    data={
+                        "mode": mode,
+                        "wifi_box_id": wifi_box,
+                        "user_id": self._user.get("id"),
+                        "id": self._user.get("id"),
+                        "token": self.TOKEN,
+                    }
+                )
+            
+            data = await res.json()
+            # TODO: check status
+
+            if not res.ok:
+                res.raise_for_status()
+
+            _LOGGER.debug("boiler set temp: {}".format(data))
+            return True
+        except Exception as ex:
+            _LOGGER.warning(ex)
+            return False
+
+    async def setBoilerTemp(self, wifi_box: str, temp: float):
+        try:
+            await self._ensure_login()
+
+            async with asyncio.timeout(self._timeout):
+                res = await self._session.put(
+                    self.BASE_URL + self.SET_BOILER_DHW_TEMP,
+                    data={
+                        "temp": int(temp),
+                        "wifi_box_id": wifi_box,
+                        "user_id": self._user.get("id"),
+                        "id": self._user.get("id"),
+                        "token": self.TOKEN,
+                    }
+                )
+            
+            data = await res.json()
+            # TODO: check status
+
+            if not res.ok:
+                res.raise_for_status()
+
+            _LOGGER.debug("boiler set temp: {}".format(data))
+            return True
+        except Exception as ex:
+            _LOGGER.warning(ex)
+            return False
 
     async def _ensure_login(self):
         if not self._user:

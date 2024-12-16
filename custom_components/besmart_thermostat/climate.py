@@ -13,14 +13,10 @@ tested with home-assistant >= 0.96
 import logging
 from datetime import datetime
 
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
-    ATTR_TARGET_TEMP_LOW,
-    ATTR_TARGET_TEMP_HIGH,
     DOMAIN as PLATFORM_DOMAIN,
     HVACAction,
     HVACMode,
@@ -28,22 +24,14 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    CONF_ID,
-    CONF_UNIQUE_ID,
     CONF_NAME,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_MODE,
     UnitOfTemperature,
 )
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import async_generate_entity_id
-from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-from .const import DEFAULT_NAME, DOMAIN
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,13 +44,6 @@ ENTITY_ID_FORMAT = PLATFORM_DOMAIN + ".{}"
 
 ATTR_MODE = "mode"
 STATE_UNKNOWN = "unknown"
-
-SUPPORT_FLAGS = (
-    ClimateEntityFeature.TARGET_TEMPERATURE |
-    ClimateEntityFeature.PRESET_MODE |
-    ClimateEntityFeature.TURN_ON |
-    ClimateEntityFeature.TURN_OFF
-)
 
 
 async def async_setup_entry(
@@ -166,20 +147,6 @@ class Thermostat(ClimateEntity):
 
         # link to BeSMART device
         self._attr_device_info = device_info
-
-        # DeviceInfo(
-        #     identifiers={
-        #         (DOMAIN, self._attr_unique_id)
-        #     },
-        #     name=self._entry_name,
-        #     manufacturer="Riello S.p.A.",
-        #     model="BeSMART Thermostat",
-        #     model_id="BeSMART Thermostat",
-        #     serial_number=self._room_id,
-        #     suggested_area=self._room_name,
-        #     sw_version="1.0",
-        #     via_device=(DOMAIN, self.api.bridgeid),
-        # )
 
         # unique_id = <deviceID>:<roomID>
         self._attr_unique_id = f"{self._entry_id}:{self._room_id}"
@@ -395,7 +362,6 @@ class Thermostat(ClimateEntity):
         self._season = thermostat.get("season")
 
     async def async_turn_on(self):
-        await self.async_set_preset_mode("AUTO")
         await self.async_set_preset_mode(self.PRESET_BESMART_TO_HA.get(self.AUTO))
 
     async def async_turn_off(self):
@@ -412,7 +378,7 @@ class Thermostat(ClimateEntity):
                 await self._cl.setThermostatSeason(self._room_name, season)
             if current_hvac_mode == HVACMode.OFF:
                 await self.async_turn_on()
-            _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(mode))
+            _LOGGER.debug("Set hvac_mode hvac_mode=%s(%s)", str(hvac_mode), str(season))
 
     async def async_set_preset_mode(self, preset_mode):
         """Set HVAC mode (comfort, home, sleep, Party, Off)."""
