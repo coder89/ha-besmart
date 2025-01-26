@@ -7,26 +7,11 @@ Be aware the thermostat may require more then 3 minute to refresh its states.
 The thermostats support the season switch however this control will be managed with a 
 different control.
 
-tested with home-assistant >= 0.113
+Tested with home-assistant >= 2025.1
 
-Configuration example:
+Using HACS, add the custom repository, selecting **"Integration"** as the value for **"Type"**
 
-```yaml
-climate:
-  - platform: besmart_thermostat
-    name: Besmart Thermostat
-    username: <my-username>
-    password: <my-password>
-    room: Soggiorno
-    scan_interval: 10
-
-logging options:
-
-logger:
-  default: info
-  logs:
-    custom_components.climate.besmart_thermostat: debug
-```
+Once the repository has been successfully added, go to **Settings** → **Devices & services** → **Add Integration**, select **BeSmart**, and complete the required settings.
 
 ## Contribute
 
