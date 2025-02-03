@@ -176,6 +176,8 @@ class WaterHeater(WaterHeaterEntity):
             # "save_t": self._saveT,
             # "season_mode": self.hvac_mode,
             # "heating_state": self._heating_state,
+            "flame_status": self._flame_status,
+            "system_pressure": self._system_pressure,
         }
 
     async def async_update(self):
@@ -202,6 +204,18 @@ class WaterHeater(WaterHeaterEntity):
             self._current_temp = float(boiler.get("dhw_current_temp"))
         except ValueError:
             self._current_temp = 0.0
+
+        # Extract flame status
+        try:
+            self._flame_status = float(boiler.get("flame_status"))
+        except ValueError:
+            self._flame_status = 0
+
+        # Extract system pressure
+        try:
+            self._system_pressure = float(boiler.get("system_pressure"))
+        except ValueError:
+            self._system_pressure = 0.0
 
         # Misc
         self._current_unit = boiler.get("unit")
