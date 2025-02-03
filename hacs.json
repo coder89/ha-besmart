@@ -1,5 +1,5 @@
 {
-  "name": "BeSmart Integration",
+  "name": "BeSmart Integration TEST",
   "content_in_root": false,
   "domains": ["climate", "sensor"],
   "homeassistant": "0.113.3",
