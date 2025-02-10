@@ -270,6 +270,7 @@ class Thermostat(ClimateEntity):
         """Return the device specific state attributes."""
         return {
             ATTR_MODE: self._current_state,
+            "setpoint_OT": self._setpoint_OT,
             "updating_temp": self._tempSet != self.target_temperature
             # "battery_state": self._battery,
             # "frost_t": self._frostT,
@@ -352,6 +353,9 @@ class Thermostat(ClimateEntity):
 
         # Current heating state
         self._heating_state = thermostat.get("heating_status", "") == "1"
+
+        # central_heating_thermostat_OT_set_point
+        self._setpoint_OT = float(thermostat.get("central_heating_thermostat_OT_set_point"))
 
         # Misc
         try:
