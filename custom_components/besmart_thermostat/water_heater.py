@@ -216,7 +216,7 @@ class WaterHeater(WaterHeaterEntity):
         try:
             self._outdoor_temperature = float(boiler.get("outdoor_probe_temp"))
         except ValueError:
-            self._system_pressure = 0.0
+            self._outdoor_temperature = 0.0
 
         # Extract system pressure
         try:
