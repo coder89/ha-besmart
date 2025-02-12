@@ -177,6 +177,7 @@ class WaterHeater(WaterHeaterEntity):
             # "season_mode": self.hvac_mode,
             # "heating_state": self._heating_state,
             "flame_status": self._flame_status,
+            "outdoor_temperature": self._outdoor_temperature
             "system_pressure": self._system_pressure,
         }
 
@@ -210,6 +211,12 @@ class WaterHeater(WaterHeaterEntity):
             self._flame_status = float(boiler.get("flame_status"))
         except ValueError:
             self._flame_status = 0
+
+        # Extract outdoor temperature
+        try:
+            self._outdoor_temperature = float(boiler.get("outdoor_probe_temp"))
+        except ValueError:
+            self._system_pressure = 0.0
 
         # Extract system pressure
         try:
