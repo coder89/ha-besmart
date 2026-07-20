@@ -1,7 +1,6 @@
 import logging
-from enum import StrEnum
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -10,16 +9,6 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-class BatteryStates(StrEnum):
-    Low = "low"
-    Good = "good"
-    Unknown = "unknown"
-
-BATTERY_STATES_MAP = {
-    True: BatteryStates.Low,
-    False: BatteryStates.Good,
-    None: BatteryStates.Unknown,
-}
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -40,44 +29,43 @@ async def async_setup_entry(
             unique_id = f"{config_entry.entry_id}:{room_id}"
             climate_entity = hass.data[DOMAIN].get(unique_id)
             if climate_entity:
-                new_entities.append(BatteryStatusSensor(climate_entity, room_name, device.device_info))
+                new_entities.append(
+                    BatterySensor(climate_entity, room_name, device.device_info)
+                )
             else:
                 _LOGGER.warning("Climate entity not found for unique_id %s", unique_id)
 
     if new_entities:
         async_add_entities(new_entities, update_before_add=True)
 
-class BatteryStatusSensor(SensorEntity):
-    """Representation of an enum sensor for BeSMART thermostat battery status."""
+
+class BatterySensor(SensorEntity):
+    """Representation of a BeSMART thermostat battery sensor (percentage)."""
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = list(BatteryStates)
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_translation_key = "battery_status"
+    _attr_translation_key = "battery"
 
     def __init__(self, climate_entity, room_name, device_info):
         """Initialize the battery sensor."""
         self._climate_entity = climate_entity
-        self._attr_unique_id = f"{climate_entity.unique_id}_battery_status"
-        self._attr_name = f"{room_name} Thermostat Battery Status"
+        self._attr_unique_id = f"{climate_entity.unique_id}_battery"
+        self._attr_name = f"{room_name} Thermostat Battery"
         self._attr_device_info = device_info
-        self._attr_state = BatteryStates.Unknown
 
     @property
-    def native_value(self):
-        """Return the native value of the sensor."""
-        battery_low = None
-        if self._climate_entity and self._climate_entity.extra_state_attributes:
-            battery_low = self._climate_entity.extra_state_attributes.get("battery_low")
-        self._attr_state = BATTERY_STATES_MAP.get(battery_low, BatteryStates.Unknown)
-        return self._attr_state
+    def native_value(self) -> int | None:
+        """Return the battery level as percentage."""
+        if not self._climate_entity or not self._climate_entity.extra_state_attributes:
+            return None
 
-    @property
-    def icon(self):
-        """Return the icon based on the state."""
-        return {
-            BatteryStates.Low: "mdi:battery-low",
-            BatteryStates.Good: "mdi:battery",
-            BatteryStates.Unknown: "mdi:battery-unknown",
-        }.get(self._attr_state, "mdi:battery-unknown")
+        battery_low = self._climate_entity.extra_state_attributes.get("battery_low")
+
+        if battery_low is True:
+            return 10          # Low battery
+        if battery_low is False:
+            return 100         # Good battery
+
+        return None            # Unknown
